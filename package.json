@@ -1,0 +1,25 @@
+{
+  "name": "pi-anthropic-auth-cloudflare",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Web API-only Anthropic OAuth request shaping for pi-ai provider collections",
+  "type": "module",
+  "license": "MIT",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist", "README.md", "LICENSE", "NOTICE", "docs/research.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "prepare": "npm run build"
+  },
+  "peerDependencies": { "@earendil-works/pi-ai": "1.2.x" },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "1.2.0",
+    "@types/node": "26.6.5",
+    "esbuild": "0.28.2",
+    "miniflare": "5.20261006.2-beta",
+    "typescript": "7.0.2",
+    "vitest": "5.0.4"
+  }
+}

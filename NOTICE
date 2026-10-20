@@ -1,0 +1,11 @@
+This project adapts request-shaping algorithms and the structured prompt parser
+from @gotgenes/pi-anthropic-auth 3.4.3 by Christopher D. Lasher (MIT):
+https://github.com/gotgenes/pi-anthropic-auth
+
+The upstream MIT copyright and permission notice are retained in LICENSE.
+Ported portions: src/billing.ts, src/payload.ts, src/system-prompt.ts,
+src/system-prompt-sections.ts. The provider-collection wiring and Web Crypto
+implementation are adaptations for pi-ai 1.2.0 and Web API runtimes.
+
+This is an independent, unofficial adapter, not affiliated with or endorsed by
+Anthropic, Cloudflare, or the upstream projects. Trademarks belong to their owners.
