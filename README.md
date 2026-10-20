@@ -1,5 +1,7 @@
 # pi-anthropic-auth-cloudflare
 
+![Anthropic auth. Built for Workers. Unofficial experimental request-shaping adapter for pi-ai.](assets/og.png)
+
 An **unofficial, experimental TypeScript port** of request shaping from
 [@gotgenes/pi-anthropic-auth](https://github.com/gotgenes/pi-anthropic-auth)
 for **pi-ai 1.2.x** provider collections and pi-durable. GitHub-source distribution
