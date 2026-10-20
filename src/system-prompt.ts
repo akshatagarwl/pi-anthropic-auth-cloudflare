@@ -46,29 +46,46 @@ export function shapeInitialSystemText(text: string): string {
   return text.includes(PI_PREFIX) ? shapeSystemPrompt(text) : text;
 }
 
-const UPDATE = /^(?:Updated system prompt section "([a-z][a-z0-9_-]*)":\n\n|Removed system prompt section "([a-z][a-z0-9_-]*)"\.$)/gm;
+// Sticky matching: only advance to a new frame after a complete section body.
+const UPDATE = /(?:Updated system prompt section "([a-z][a-z0-9_-]*)":\n\n|Removed system prompt section "([a-z][a-z0-9_-]*)"\.(?=\n\n|$))/y;
+const FRAME_IN_BODY = /^(?:Updated system prompt section "[a-z][a-z0-9_-]*":|Removed system prompt section "[a-z][a-z0-9_-]*"\.)/m;
 
 export function shapeSystemUpdate(text: string): string | undefined {
-  const frames = [...text.matchAll(UPDATE)];
-  if (frames.length === 0) return text;
+  if (text === "") return text;
   const parts: string[] = [];
-  const leading = text.slice(0, frames[0].index).trim();
-  if (leading) parts.push(leading);
-  for (const [index, frame] of frames.entries()) {
-    const [, updated, removed] = frame;
-    if (removed !== undefined) {
-      if (removed !== "docs") parts.push(frame[0]);
-      continue;
+  let cursor = 0;
+  while (cursor < text.length) {
+    UPDATE.lastIndex = cursor;
+    const frame = UPDATE.exec(text);
+    // Free-form leading/trailing instructions cannot be distinguished from
+    // frame-like examples. Do not partially rewrite an ambiguous message.
+    if (!frame) return text;
+    const [, updated] = frame;
+    let end = cursor + frame[0].length;
+    if (updated === undefined) {
+      // A name alone does not prove that the removed section was suppressed:
+      // custom docs may have been retained in the initial prompt or an update.
+      parts.push(frame[0]);
+    } else {
+      const remaining = text.slice(end);
+      const chunks = parseSystemPromptChunks(remaining);
+      const section = chunks[0];
+      const tagged = section?.name === updated;
+      if (!tagged && (remaining.startsWith("<") || FRAME_IN_BODY.test(remaining))) return text;
+      // An untagged body has no reliable end marker. Accept it only as the
+      // final update; never interpret any frame-like text within it as a frame.
+      const value = tagged ? section.body : remaining;
+      end += tagged ? section.raw.length : remaining.length;
+      const body = shapeSection(updated, value);
+      if (body !== undefined) {
+        const raw = tagged ? (body === value ? section.raw : namedSection(updated, body).raw) : body;
+        parts.push(`${frame[0]}${raw}`);
+      }
     }
-    if (updated === undefined) continue;
-    const end = frames[index + 1]?.index ?? text.length;
-    const value = text.slice(frame.index + frame[0].length, end).trimEnd();
-    const chunks = parseSystemPromptChunks(value);
-    const tagged = chunks.length === 1 && chunks[0].name === updated;
-    const body = shapeSection(updated, tagged ? chunks[0].body : value);
-    if (body !== undefined) {
-      parts.push(`${frame[0]}${tagged ? namedSection(updated, body).raw : body}`);
-    }
+    if (end === text.length) break;
+    if (!text.startsWith("\n\n", end)) return text;
+    cursor = end + 2;
+    if (cursor === text.length) return text;
   }
   return parts.length ? parts.join("\n\n") : undefined;
 }

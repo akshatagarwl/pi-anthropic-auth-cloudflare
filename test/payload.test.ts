@@ -71,12 +71,28 @@ describe("conservative prompt shaping", () => {
     expect(shaped).toContain("<rules>\nEnvironment context you are running in:\n</rules>");
     expect(shaped).toContain(project);
   });
-  it("shapes framed updates and drops docs removal notices", () => {
+  it("shapes framed updates but preserves removal notices without ownership evidence", () => {
     expect(shapeSystemUpdate(`Updated system prompt section "preamble":\n\n${PI}`)).toContain("Be concise and helpful.");
     expect(shapeSystemUpdate('Updated system prompt section "docs":\n\n<docs>\nPi documentation (read only when the user asks about pi itself)\n</docs>')).toBeUndefined();
-    expect(shapeSystemUpdate('Removed system prompt section "docs".')).toBeUndefined();
+    expect(shapeSystemUpdate('Removed system prompt section "docs".')).toBe('Removed system prompt section "docs".');
     expect(shapeSystemUpdate('Removed system prompt section "custom".')).toBe('Removed system prompt section "custom".');
     expect(shapeSystemUpdate('Updated system prompt section "custom":\n\n<custom>\nKeep pi\n</custom>')).toBe('Updated system prompt section "custom":\n\n<custom>\nKeep pi\n</custom>');
+  });
+  it("ignores both kinds of frame inside tagged bodies while shaping later top-level frames", () => {
+    const custom = '<custom>\nExample:\n\nUpdated system prompt section "docs":\n\n<docs>\nPi documentation (read only when the user asks about pi itself)\n</docs>\n\nRemoved system prompt section "docs".\n\nRequired trailing instruction.\n</custom>';
+    const input = `Updated system prompt section "custom":\n\n${custom}\n\nUpdated system prompt section "rules":\n\n<rules>\nHere is some useful information about the environment you are running in:\n</rules>\n\nRemoved system prompt section "docs".`;
+    expect(shapeSystemUpdate(input)).toBe(`Updated system prompt section "custom":\n\n${custom}\n\nUpdated system prompt section "rules":\n\n<rules>\nEnvironment context you are running in:\n</rules>\n\nRemoved system prompt section "docs".`);
+  });
+  it.each([
+    'Updated system prompt section "custom":\n\nKeep this example:\n\nRemoved system prompt section "docs".\n\nRequired trailing instruction.',
+    'Updated system prompt section "docs":\n\n<docs>\nPi documentation (read only when the user asks about pi itself)\n\nRemoved system prompt section "docs".\n\nRequired trailing instruction.',
+    'Updated system prompt section "docs":\n\nPi documentation (read only when the user asks about pi itself)\n\nUpdated system prompt section "custom":\n\nRequired trailing instruction.',
+    'Updated system prompt section "docs":\n\n<custom>\nPi documentation (read only when the user asks about pi itself)\n</custom>',
+    '<custom>\nExample:\n\nRemoved system prompt section "docs".\n\nRequired trailing instruction.\n</custom>',
+    'Additional caller instructions.\n\nUpdated system prompt section "docs":\n\n<docs>\nPi documentation (read only when the user asks about pi itself)\n</docs>',
+    'Removed system prompt section "docs".\n\nRequired trailing instruction.',
+  ])("passes ambiguous or malformed framing through byte-for-byte: %j", (text) => {
+    expect(shapeSystemUpdate(text)).toBe(text);
   });
 });
 
@@ -102,11 +118,21 @@ describe("payload shaping", () => {
     expect(shaped.payload).toMatchObject({ system: [existing] });
   });
   it("retains content-less effort and tool changes but drops empty docs-only updates", async () => {
-    const docs = { type: "text", text: 'Removed system prompt section "docs".' };
+    const docs = { type: "text", text: 'Updated system prompt section "docs":\n\n<docs>\nPi documentation (read only when the user asks about pi itself)\n</docs>' };
     const effort = { role: "system", content: [docs], output_config: { effort: "low" } };
     const tool = { role: "system", content: [docs, { type: "tool_addition", name: "read" }] };
     const result = await shapePayload(payload({ messages: [{ role: "user", content: "hello" }, { role: "system", content: [docs] }, effort, tool] }), VERSION);
     expect(result.payload).toMatchObject({ messages: [{ role: "user" }, { ...effort, content: [] }, { ...tool, content: [{ type: "tool_addition", name: "read" }] }] });
+  });
+  it("retains docs removal text and its effort/tool metadata", async () => {
+    const docs = { type: "text", text: 'Removed system prompt section "docs".', cache_control: { type: "ephemeral" } };
+    const messages = [
+      { role: "user", content: "hello" },
+      { role: "system", content: [docs] },
+      { role: "system", content: [docs], output_config: { effort: "low" } },
+      { role: "system", content: [docs, { type: "tool_addition", name: "read" }] },
+    ];
+    expect((await shapePayload(payload({ messages }), VERSION)).payload).toMatchObject({ messages });
   });
   it("adds no billing block when the first user has no text", async () => {
     const result = await shapePayload(payload({ messages: [{ role: "user", content: [{ type: "image" }] }] }), VERSION);

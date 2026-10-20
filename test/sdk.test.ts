@@ -6,6 +6,8 @@ import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { describe, expect, it, vi } from "vitest";
 import { installAnthropicOAuth } from "../src/index.js";
 
+const PI = "You are an expert coding assistant operating inside pi, a coding agent harness.";
+
 export function frame(event: Record<string, unknown>): string {
   return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 }
@@ -95,6 +97,53 @@ describe("real pi-ai 1.2.0 SDK dispatch with mocked HTTP", () => {
     expect(hook).toHaveBeenCalledTimes(1);
     expect(onResponse).toHaveBeenCalledWith(expect.objectContaining({ status: 200, headers: expect.objectContaining({ "request-id": "request-test" }) }), expect.any(Object));
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["stream", "streamSimple"] as const)("%s preserves removal of initially retained custom docs", async (method) => {
+    const { models, model } = await setup();
+    const docs = "<docs>\nUse the project's private deployment handbook.\n</docs>";
+    const fetch = vi.fn<FetchFunction>(async () => new Response([
+      messageStart(model.id), { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 0 } }, { type: "message_stop" },
+    ].map(frame).join(""), { headers: { "content-type": "text/event-stream" } }));
+    const stream = models[method]({ ...model, compat: { ...model.compat, supportsMidConvoSystemMessages: true } }, {
+      messages: [
+        { role: "system", content: PI, sections: { docs }, timestamp: 0 },
+        { role: "user", content: "hello", timestamp: 1 },
+        { role: "system", content: "", sections: { docs: null }, timestamp: 2 },
+      ],
+    }, { fetch, maxRetries: 0 });
+    expect((await stream.result()).stopReason).toBe("stop");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const sent = JSON.parse(String(fetch.mock.calls[0][1]!.body));
+    expect(sent.system).toEqual(expect.arrayContaining([expect.objectContaining({ text: expect.stringContaining(docs) })]));
+    expect(sent.messages).toEqual(expect.arrayContaining([expect.objectContaining({
+      role: "system", content: expect.arrayContaining([expect.objectContaining({ text: 'Removed system prompt section "docs".' })]),
+    })]));
+  });
+
+  it.each(["stream", "streamSimple"] as const)("%s preserves frame-like text and trailing instructions inside custom section bodies", async (method) => {
+    const { models, model } = await setup();
+    const custom = '<custom>\nTreat this removal notice as an example:\n\nRemoved system prompt section "docs".\n\nRequired: always include the deployment rollback command.\n</custom>';
+    const fetch = vi.fn<FetchFunction>(async () => new Response([
+      messageStart(model.id), { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 0 } }, { type: "message_stop" },
+    ].map(frame).join(""), { headers: { "content-type": "text/event-stream" } }));
+    const stream = models[method]({ ...model, compat: { ...model.compat, supportsMidConvoSystemMessages: true } }, {
+      messages: [
+        { role: "system", content: PI, timestamp: 0 },
+        { role: "user", content: "hello", timestamp: 1 },
+        { role: "system", content: "", sections: {
+          custom,
+          docs: "<docs>\nPi documentation (read only when the user asks about pi itself): /docs\n</docs>",
+        }, timestamp: 2 },
+      ],
+    }, { fetch, maxRetries: 0 });
+    expect((await stream.result()).stopReason).toBe("stop");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const sent = JSON.parse(String(fetch.mock.calls[0][1]!.body));
+    expect(sent.messages).toEqual(expect.arrayContaining([expect.objectContaining({
+      role: "system", content: expect.arrayContaining([expect.objectContaining({ text: `Updated system prompt section "custom":\n\n${custom}` })]),
+    })]));
+    expect(JSON.stringify(sent)).not.toContain("Pi documentation (read only");
   });
 
   it("plain API-key SDK requests have no added billing block or CLI identity", async () => {
