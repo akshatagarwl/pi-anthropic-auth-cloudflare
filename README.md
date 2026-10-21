@@ -68,14 +68,24 @@ uses `nodejs_compat` for upstream dependencies.
 
 ## Copy-paste integration (opt-in)
 
-From your pi-ai/pi-durable application's directory:
+From your pi-ai/pi-durable application's directory, install the prebuilt GitHub release:
+
+```sh
+npm install https://github.com/akshatagarwl/pi-anthropic-auth-cloudflare/releases/download/v0.1.0/pi-anthropic-auth-cloudflare-0.1.0.tgz
+```
+
+The archive includes JavaScript and TypeScript declarations; no dependency build
+step is required. Commit your package manager's lockfile to record its integrity.
+For pnpm, the same archive URL works with `pnpm add`.
+
+Source installation is also available:
 
 ```sh
 pnpm add 'github:akshatagarwl/pi-anthropic-auth-cloudflare#v0.1.0'
 ```
 
-Commit the resulting lockfile to pin the resolved Git commit. Git installation
-runs `prepare` to build `dist/`; allow the build if your package manager asks.
+Git installation runs `prepare` to build `dist/`; allow the build if your package
+manager asks. Prefer the prebuilt archive if your package manager skips Git preparation.
 Alternatively clone this repository, run `npm ci`, and add the built local checkout
 with `pnpm add ../pi-anthropic-auth-cloudflare`.
 
